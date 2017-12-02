@@ -2,6 +2,198 @@
 Brick changelog
 ---------------
 
+0.29
+----
+
+API changes:
+ * Added Ord instances for `Location` and `BrickEvent` (thanks Tom
+   Sydney Kerckhove)
+ * `Brick.AttrMap`: attribute name components are now exposed via the
+   `attrNameComponents` function. Also added a Read instance for
+   AttrName.
+
+New features:
+ * This release adds user-customizable theme support. Please see the
+   "Attribute Themes" section of the User Guide for an introduction; see
+   the Haddock documentation for `Brick.Themes` for full details. Also,
+   see the new `programs/ThemeDemo.hs` for a working demonstration.
+
+0.28
+----
+
+API changes:
+ * Brick.AttrMap.setDefault was renamed to setDefaultAttr.
+ * Added Brick.AttrMap.getDefaultAttr: get the default attribute from an
+   attribute map.
+ * Added Brick.Widgets.Core.modifyDefAttr to modify the default
+   attribute of the rendering context.
+
+Other changes:
+ * Updated AttrDemo to show usage of modifyDefAttr.
+
+0.27
+----
+
+API changes:
+ * Brick.Widgets.Core: added `hyperlink` combinator (thanks Getty Ritter
+   for hyperlinking support)
+
+Other changes:
+ * Updated AttrDemo to show how to use hyperlinking
+ * README: Added `herms` to featured projects
+
+0.26.1
+------
+
+ * Fixed haddock for listHandleEventVi.
+
+0.26
+----
+
+API changes:
+ * Added Brick.Widgets.List.handleListEventVi to add support for
+   vi-style movements to lists (thanks Richard Alex Hofer)
+
+Other changes:
+ * Added ListViDemo.hs to demonstrate the Vi-style handler for lists
+   (thanks Richard Alex Hofer)
+
+0.25
+----
+
+API changes:
+ * List: added page movement functions `listMoveByPages`,
+   `listMovePageUp`, and `listMovePageDown` (thanks Richard Alex Hofer)
+
+Miscellaneous:
+ * Fixed a spelling mistake in the AttrMap haddock (thanks Edward Betts)
+
+0.24.2
+------
+
+Miscellaneous:
+ * Minor documentation updates including a clarification for #135
+
+0.24.1
+------
+
+Bug fixes:
+ * vBox/hBox: when there is leftover space and all elements are greedy,
+   spread it amongst the elements as evenly as possible instead of
+   assigning it all to the first element (fixes #133)
+
+Package changes:
+ * Include Sam Tay's brick tutorial files in extra-doc-files
+
+0.24
+----
+
+API changes:
+ * Added Brick.Widgets.Core.setAvailableSize to control rendering
+   context size in cases where the screen size is too constraining (e.g.
+   for a floating layer that might be bigger than the screen).
+
+Documentation changes:
+ * Samuel Tay has contributed his wonderful Brick tutorial to this
+   package in docs/samtay-tutorial.md. Thank you!
+
+0.23
+----
+
+API changes:
+ * getVtyHandle: always return a Vty handle rather than Maybe
+   (Previously, in appStartEvent you'd get Nothing because Vty had
+   not been initialized yet. This made various use cases impossible
+   to satisfy because appStartEvent is a natural place to get initial
+   terminal state from Vty. This change makes it so that a Vty handle is
+   always available, even in appStartEvent.)
+ * txtWrapWith: added missing haddock
+
+0.22
+----
+
+API changes:
+ * Core: added txtWrapWith and strWrapWith functions to provide control
+   over wrapping behavior by specifying custom wrapping settings.
+
+Other changes:
+ * Updated TextWrapDemo.hs to demonstrate customizing wrapping settings.
+
+0.21
+----
+
+Package changes:
+ * Upgrade to word-wrap 0.2
+
+Other changes:
+ * Brick.Types.Internal: improve mouse constructor haddock
+ * Add a basic fill demonstration program (FillDemo.hs)
+
+0.20.1
+------
+
+Bug fixes:
+ * str: fixed an IsString constraint confusion on GHC 7.10.1
+
+0.20
+----
+
+Package changes:
+ * Added a dependency on "word-wrap" for text-wrapping.
+ * Added a new TextWrapDemo demo program to illustrate text wrapping
+   support
+
+API changes:
+ * Brick.Widgets.Core: added new functions txtWrap and strWrap to do
+   wrapping of long lines of text.
+
+Miscellaneous:
+ * Guide: fixed event type (#126)
+
+0.19
+----
+
+API changes:
+ * The editor content drawing function is now passed to renderEditor,
+   not the constructor, to improve separation of presentation and
+   representation concerns. The corresponding Editor drawing function
+   lens and accessor were removed.
+
+0.18
+----
+
+Package changes:
+ * Added a dependency on data-clist.
+
+API changes:
+ * Brick.Focus: removed the Functor instance for FocusRing.
+ * Brick.Focus: re-implemented FocusRing in terms of the circular list
+   data structure from data-clist. In addition, this change introduced
+   "focusRingModify", which permits the user to use the data-clist API
+   to directly manipulate the FocusRing's internals. This way brick
+   doesn't have to re-invent the wheel on the focus ring behavior.
+
+0.17.2
+------
+
+Package changes:
+ * Added programs/ReadmeDemo.hs and featured its output and code in the
+   README to provide an early demonstration
+
+Library changes:
+ * centerAbout now right- and bottom-pads its operand to behave
+   consistently with h/vCenter
+
+0.17.1
+------
+
+Package changes:
+ * Use Extra-Doc-Files instead of Data-Files for documentation files
+
+Bug fixes:
+ * List: correctly update selected index in listInsert
+ * Update example program in brick.cabal (thanks @timbod7)
+
 0.17
 ----
 

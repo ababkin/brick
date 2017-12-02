@@ -2,6 +2,7 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- | This module provides the core widget combinators and rendering
 -- routines. Everything this library does is in terms of these basic
 -- primitives.
@@ -11,8 +12,13 @@ module Brick.Widgets.Core
   , emptyWidget
   , raw
   , txt
+  , txtWrap
+  , txtWrapWith
   , str
+  , strWrap
+  , strWrapWith
   , fill
+  , hyperlink
 
   -- * Padding
   , padLeft
@@ -32,9 +38,11 @@ module Brick.Widgets.Core
   -- * Limits
   , hLimit
   , vLimit
+  , setAvailableSize
 
   -- * Attribute management
   , withDefAttr
+  , modifyDefAttr
   , withAttr
   , forceAttr
   , overrideAttr
@@ -84,7 +92,7 @@ import Control.Applicative
 import Data.Monoid ((<>), mempty)
 #endif
 
-import Lens.Micro ((^.), (.~), (&), (%~), to, _1, _2, each, to, ix, Lens')
+import Lens.Micro ((^.), (.~), (&), (%~), to, _1, _2, each, to, Lens')
 import Lens.Micro.Mtl (use, (%=))
 import Control.Monad ((>=>),when)
 import Control.Monad.Trans.State.Lazy
@@ -99,6 +107,8 @@ import qualified Data.Function as DF
 import Data.List (sortBy, partition)
 import qualified Graphics.Vty as V
 import Control.DeepSeq
+
+import Text.Wrap (wrapTextToLines, WrapSettings, defaultWrapSettings)
 
 import Brick.Types
 import Brick.Types.Internal
@@ -195,6 +205,43 @@ takeColumns numCols (c:cs) =
             then c : takeColumns (numCols - w) cs
             else ""
 
+-- | Make a widget from a string, but wrap the words in the input's
+-- lines at the available width using the default wrapping settings.
+strWrap :: String -> Widget n
+strWrap = strWrapWith defaultWrapSettings
+
+-- | Make a widget from a string, but wrap the words in the input's
+-- lines at the available width using the specified wrapping settings.
+strWrapWith :: WrapSettings -> String -> Widget n
+strWrapWith settings t = txtWrapWith settings $ T.pack t
+
+safeTextWidth :: T.Text -> Int
+safeTextWidth = V.safeWcswidth . T.unpack
+
+-- | Make a widget from text, but wrap the words in the input's lines at
+-- the available width using the default wrapping settings.
+txtWrap :: T.Text -> Widget n
+txtWrap = txtWrapWith defaultWrapSettings
+
+-- | Make a widget from text, but wrap the words in the input's lines at
+-- the available width using the specified wrapping settings.
+txtWrapWith :: WrapSettings -> T.Text -> Widget n
+txtWrapWith settings s =
+    Widget Fixed Fixed $ do
+      c <- getContext
+      let theLines = fixEmpty <$> wrapTextToLines settings (c^.availWidthL) s
+          fixEmpty l | T.null l = " "
+                     | otherwise = l
+      case force theLines of
+          [] -> return emptyResult
+          [one] -> return $ emptyResult & imageL .~ (V.text' (c^.attrL) one)
+          multiple ->
+              let maxLength = maximum $ safeTextWidth <$> multiple
+                  lineImgs = lineImg <$> multiple
+                  lineImg lStr = V.text' (c^.attrL)
+                                   (lStr <> T.replicate (maxLength - safeTextWidth lStr) " ")
+              in return $ emptyResult & imageL .~ (V.vertCat lineImgs)
+
 -- | Build a widget from a 'String'. Breaks newlines up and space-pads
 -- short lines out to the length of the longest line.
 str :: String -> Widget n
@@ -202,6 +249,7 @@ str s =
     Widget Fixed Fixed $ do
       c <- getContext
       let theLines = fixEmpty <$> (dropUnused . lines) s
+          fixEmpty :: String -> String
           fixEmpty [] = " "
           fixEmpty l = l
           dropUnused l = takeColumns (availWidth c) <$> take (availHeight c) l
@@ -214,10 +262,20 @@ str s =
                   lineImg lStr = V.string (c^.attrL) (lStr ++ replicate (maxLength - V.safeWcswidth lStr) ' ')
               in return $ emptyResult & imageL .~ (V.vertCat lineImgs)
 
--- | Build a widget from a one-line 'T.Text' value. Behaves the same as
--- 'str'.
+-- | Build a widget from a 'T.Text' value. Behaves the same as 'str'
+-- when the input contains multiple lines.
 txt :: T.Text -> Widget n
 txt = str . T.unpack
+
+-- | Hyperlink the given widget to the specified URL. Not all terminal
+-- emulators support this. In those that don't, this should have no
+-- discernible effect.
+hyperlink :: T.Text -> Widget n -> Widget n
+hyperlink url p =
+    Widget (hSize p) (vSize p) $ do
+        c <- getContext
+        let attr = attrMapLookup (c^.ctxAttrNameL) (c^.ctxAttrMapL) `V.withURL` url
+        withReaderT (& ctxAttrMapL %~ setDefaultAttr attr) (render p)
 
 -- | Pad the specified widget on the left. If max padding is used, this
 -- grows greedily horizontally; otherwise it defers to the padded
@@ -433,7 +491,8 @@ renderBox br ws =
       c <- getContext
 
       let pairsIndexed = zip [(0::Int)..] ws
-          (his, lows) = partition (\p -> (primaryWidgetSize br $ snd p) == Fixed) pairsIndexed
+          (his, lows) = partition (\p -> (primaryWidgetSize br $ snd p) == Fixed)
+                        pairsIndexed
 
       let availPrimary = c^.(contextPrimary br)
           availSecondary = c^.(contextSecondary br)
@@ -443,18 +502,21 @@ renderBox br ws =
               result <- render $ limitPrimary br remainingPrimary
                                $ limitSecondary br availSecondary
                                $ cropToContext prim
-              renderHis (remainingPrimary - (result^.imageL.(to $ imagePrimary br))) (DL.snoc prev (i, result)) rest
+              renderHis (remainingPrimary - (result^.imageL.(to $ imagePrimary br)))
+                        (DL.snoc prev (i, result)) rest
 
       renderedHis <- renderHis availPrimary DL.empty his
 
       renderedLows <- case lows of
           [] -> return []
           ls -> do
-              let remainingPrimary = c^.(contextPrimary br) - (sum $ (^._2.imageL.(to $ imagePrimary br)) <$> renderedHis)
+              let remainingPrimary = c^.(contextPrimary br) -
+                                     (sum $ (^._2.imageL.(to $ imagePrimary br)) <$> renderedHis)
                   primaryPerLow = remainingPrimary `div` length ls
-                  padFirst = remainingPrimary - (primaryPerLow * length ls)
+                  rest = remainingPrimary - (primaryPerLow * length ls)
                   secondaryPerLow = c^.(contextSecondary br)
-                  primaries = replicate (length ls) primaryPerLow & ix 0 %~ (+ padFirst)
+                  primaries = replicate rest (primaryPerLow + 1) <>
+                              replicate (length ls - rest) primaryPerLow
 
               let renderLow ((i, prim), pri) =
                       (i,) <$> (render $ limitPrimary br pri
@@ -477,7 +539,8 @@ renderBox br ws =
           -- attribute. In a horizontal box we want all images to have
           -- the same height for the same reason.
           maxSecondary = maximum $ imageSecondary br <$> allImages
-          padImage img = padImageSecondary br (maxSecondary - imageSecondary br img) img (c^.attrL)
+          padImage img = padImageSecondary br (maxSecondary - imageSecondary br img)
+                         img (c^.attrL)
           paddedImages = padImage <$> allImages
 
       cropResultToContext $ Result (concatenatePrimary br paddedImages)
@@ -503,6 +566,15 @@ vLimit h p =
     Widget (hSize p) Fixed $
       withReaderT (& availHeightL .~ h) $ render $ cropToContext p
 
+-- | Set the rendering context height and width for this widget. This
+-- is useful for relaxing the rendering size constraints on e.g. layer
+-- widgets where cropping to the screen size is undesirable.
+setAvailableSize :: (Int, Int) -> Widget n -> Widget n
+setAvailableSize (w, h) p =
+    Widget Fixed Fixed $
+      withReaderT (\c -> c & availHeightL .~ h & availWidthL .~ w) $
+        render $ cropToContext p
+
 -- | When drawing the specified widget, set the current attribute used
 -- for drawing to the one with the specified name. Note that the widget
 -- may use further calls to 'withAttr' to override this; if you really
@@ -517,12 +589,22 @@ withAttr an p =
 
 -- | Update the attribute map while rendering the specified widget: set
 -- its new default attribute to the one that we get by looking up the
+-- specified attribute name in the map and then modifying it with the
+-- specified function.
+modifyDefAttr :: (V.Attr -> V.Attr) -> Widget n -> Widget n
+modifyDefAttr f p =
+    Widget (hSize p) (vSize p) $ do
+        c <- getContext
+        withReaderT (& ctxAttrMapL %~ (setDefaultAttr (f $ getDefaultAttr (c^.ctxAttrMapL)))) (render p)
+
+-- | Update the attribute map while rendering the specified widget: set
+-- its new default attribute to the one that we get by looking up the
 -- specified attribute name in the map.
 withDefAttr :: AttrName -> Widget n -> Widget n
 withDefAttr an p =
     Widget (hSize p) (vSize p) $ do
         c <- getContext
-        withReaderT (& ctxAttrMapL %~ (setDefault (attrMapLookup an (c^.ctxAttrMapL)))) (render p)
+        withReaderT (& ctxAttrMapL %~ (setDefaultAttr (attrMapLookup an (c^.ctxAttrMapL)))) (render p)
 
 -- | When rendering the specified widget, update the attribute map with
 -- the specified transformation.
@@ -613,13 +695,15 @@ showCursor n cloc p =
 hRelease :: Widget n -> Maybe (Widget n)
 hRelease p =
     case hSize p of
-        Fixed -> Just $ Widget Greedy (vSize p) $ withReaderT (& availWidthL .~ unrestricted) (render p)
+        Fixed -> Just $ Widget Greedy (vSize p) $
+                        withReaderT (& availWidthL .~ unrestricted) (render p)
         Greedy -> Nothing
 
 vRelease :: Widget n -> Maybe (Widget n)
 vRelease p =
     case vSize p of
-        Fixed -> Just $ Widget (hSize p) Greedy $ withReaderT (& availHeightL .~ unrestricted) (render p)
+        Fixed -> Just $ Widget (hSize p) Greedy $
+                        withReaderT (& availHeightL .~ unrestricted) (render p)
         Greedy -> Nothing
 
 -- | Render the specified widget. If the widget has an entry in the
@@ -685,12 +769,13 @@ viewport vpname typ p =
               observed <- use observedNamesL
               case S.member n observed of
                   False -> observedNamesL %= S.insert n
-                  True -> error $ "Error: while rendering the interface, the name " <> show n <>
-                                  " was seen more than once. You should ensure that all of the widgets " <>
-                                  "in each interface have unique name values. This means either " <>
-                                  "using a different name type or adding constructors to your " <>
-                                  "existing one and using those to name your widgets.  For more " <>
-                                  "information, see the \"Resource Names\" section of the Brick User Guide."
+                  True ->
+                      error $ "Error: while rendering the interface, the name " <> show n <>
+                              " was seen more than once. You should ensure that all of the widgets " <>
+                              "in each interface have unique name values. This means either " <>
+                              "using a different name type or adding constructors to your " <>
+                              "existing one and using those to name your widgets.  For more " <>
+                              "information, see the \"Resource Names\" section of the Brick User Guide."
 
       observeName vpname
 
@@ -703,13 +788,17 @@ viewport vpname typ p =
       let release = case typ of
             Vertical -> vRelease
             Horizontal -> hRelease
-            Both ->vRelease >=> hRelease
+            Both -> vRelease >=> hRelease
           released = case release p of
             Just w -> w
             Nothing -> case typ of
-                Vertical -> error $ "tried to embed an infinite-height widget in vertical viewport " <> (show vpname)
-                Horizontal -> error $ "tried to embed an infinite-width widget in horizontal viewport " <> (show vpname)
-                Both -> error $ "tried to embed an infinite-width or infinite-height widget in 'Both' type viewport " <> (show vpname)
+                Vertical -> error $ "tried to embed an infinite-height " <>
+                                    "widget in vertical viewport " <> (show vpname)
+                Horizontal -> error $ "tried to embed an infinite-width " <>
+                                      "widget in horizontal viewport " <> (show vpname)
+                Both -> error $ "tried to embed an infinite-width or " <>
+                                "infinite-height widget in 'Both' type " <>
+                                "viewport " <> (show vpname)
 
       initialResult <- render released
 
@@ -772,13 +861,16 @@ viewport vpname typ p =
                            , translated^.imageL.to V.imageHeight
                            )
       case translatedSize of
-          (0, 0) -> return $ translated & imageL .~ (V.charFill (c^.attrL) ' ' (c^.availWidthL) (c^.availHeightL))
-                                        & visibilityRequestsL .~ mempty
-                                        & extentsL .~ mempty
+          (0, 0) -> do
+              let spaceFill = V.charFill (c^.attrL) ' ' (c^.availWidthL) (c^.availHeightL)
+              return $ translated & imageL .~ spaceFill
+                                  & visibilityRequestsL .~ mempty
+                                  & extentsL .~ mempty
           _ -> render $ cropToContext
                       $ padBottom Max
                       $ padRight Max
-                      $ Widget Fixed Fixed $ return $ translated & visibilityRequestsL .~ mempty
+                      $ Widget Fixed Fixed
+                      $ return $ translated & visibilityRequestsL .~ mempty
 
 -- | Given a name, obtain the viewport for that name by consulting the
 -- viewport map in the rendering monad. NOTE! Some care must be taken

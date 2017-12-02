@@ -103,7 +103,7 @@ various functions:
    data App s e n =
        App { appDraw         :: s -> [Widget n]
            , appChooseCursor :: s -> [CursorLocation n] -> Maybe (CursorLocation n)
-           , appHandleEvent  :: s -> e -> EventM n (Next s)
+           , appHandleEvent  :: s -> BrickEvent n e -> EventM n (Next s)
            , appStartEvent   :: s -> EventM n s
            , appAttrMap      :: s -> AttrMap
            }
@@ -304,7 +304,7 @@ Using Your Own Event Type
 
 Since we often need to communicate application-specific events beyond
 Vty input events to the event handler, brick supports embedding your
-application's custom events in the stream of ``BrickEvent``s that
+application's custom events in the stream of ``BrickEvent``-s that
 your handler will receive. The type of these events is the type ``e``
 mentioned in ``BrickEvent n e`` and ``App s e n``.
 
@@ -605,7 +605,10 @@ always take up one row and 13 columns, but the string "Hello, world!"
 How widgets use space when rendered is described in two pieces of
 information in each ``Widget``: the widget's horizontal and vertical
 growth policies. These fields have type ``Brick.Types.Size`` and can
-have the values ``Fixed`` and ``Greedy``.
+have the values ``Fixed`` and ``Greedy``. Note that these values are
+merely *descriptive hints* about the behavior of the rendering function,
+so it's important that they accurately describe the widget's use of
+space.
 
 A widget advertising a ``Fixed`` size in a given dimension is a widget
 that will always consume the same number of rows or columns no
@@ -651,6 +654,11 @@ how much space is left for ``Greedy`` widgets.
 When using widgets it is important to understand their horizontal and
 vertical space behavior by knowing their ``Size`` values. Those should
 be made clear in the Haddock documentation.
+
+The rendering context's specification of available space will also
+govern how widgets get cropped, since all widgets are required to render
+to an image no larger than the rendering context specifies. If they do,
+they will be forcibly cropped.
 
 Limiting Rendering Area
 -----------------------
@@ -744,6 +752,93 @@ map combinators:
 * ``Brick.Widgets.Core.withDefAttr``
 * ``Brick.Widgets.Core.overrideAttr``
 
+Attribute Themes
+================
+
+Brick provides support for customizable attribute themes. This works as
+follows:
+
+* The application provides a default theme built in to the program.
+* The application customizes the them by loading theme customizations
+  from a user-specified customization file.
+* The application can save new customizations to files for later
+  re-loading.
+
+Customizations are written in an INI-style file. Here's an example:
+
+.. code::
+
+   [default]
+   default.fg = blue
+   default.bg = black
+
+   [other]
+   someAttribute.fg = red
+   someAttribute.style = underline
+   otherAttribute.style = [underline, bold]
+   otherAttribute.inner.fg = white
+
+In the above example, the theme's *default attribute* -- the one that is
+used when no other attributes are used -- is customized. Its foreground
+and background colors are set. Then, other attributes specified by
+the theme -- ``someAttribute`` and ``otherAttribute`` -- are also
+customized. This example shows that styles can be customized, too, and
+that a custom style can either be a single style (in this example,
+``underline``) or a collection of styles to be applied simultaneously
+(in this example, ``underline`` and ``bold``). Lastly, the hierarchical
+attribute name ``otherAttribute.inner`` refers to an attribute name
+with two components, ``otherAttribute <> inner``, similar to the
+``specificAttr`` attribute described in `How Attributes Work`_. Full
+documentation for the format of theme customization files can be found
+in the module documentation for ``Brick.Themes``.
+
+The above example can be used in a ``brick`` application as follows.
+First, the application provides a default theme:
+
+.. code:: haskell
+
+   import Brick.Themes (Theme, newTheme)
+
+   defaultTheme :: Theme
+   defaultTheme =
+       newTheme (white `on` blue)
+                [ ("someAttribute",  fg yellow)
+                , ("otherAttribute", fg magenta)
+                ]
+
+Notice that the attributes in the theme have defaults: ``someAttribute``
+will default to a yellow foreground color if it is not customized. (And
+its background will default to the theme's default background color,
+blue, if it not customized either.) Then, the application can customize
+the theme with the user's customization file:
+
+.. code:: haskell
+
+   import Brick.Themes (loadCustomizations)
+
+   main :: IO ()
+   main = do
+       customizedTheme <- loadCustomizations "custom.ini" defaultTheme
+
+Now we have a customized theme based on ``defaultTheme``. The next step
+is to build an ``AttrMap`` from the theme:
+
+.. code:: haskell
+
+   import Brick.Themes (themeToAttrMap)
+
+   main :: IO ()
+   main = do
+       customizedTheme <- loadCustomizations "custom.ini" defaultTheme
+       let mapping = themeToAttrMap customizedTheme
+
+The resulting ``AttrMap`` can then be returned by ``appAttrMap``
+as described in `How Attributes Work`_ and `appAttrMap: Managing
+Attributes`_.
+
+If the theme is further customized at runtime, any changes can be saved
+with ``Brick.Themes.saveCustomizations``.
+
 Wide Character Support and the TextWidth class
 ==============================================
 
@@ -832,11 +927,9 @@ to the Vty library handle in ``EventM``:
 
    do
      vty <- Brick.Main.getVtyHandle
-     case vty of
-       Nothing -> return ()
-       Just v -> let output = outputIface v
-                 in when (supportsMode output BracketedPaste) $
-                      liftIO $ setMode output BracketedPaste True
+     let output = outputIface vty
+     when (supportsMode output BracketedPaste) $
+         liftIO $ setMode output BracketedPaste True
 
 Once enabled, paste mode will generate Vty ``EvPaste`` events. These
 events will give you the entire pasted content as a ``ByteString`` which
@@ -855,11 +948,9 @@ To enable mouse mode, we need to get access to the Vty library handle in
 
    do
      vty <- Brick.Main.getVtyHandle
-     case vty of
-       Nothing -> return ()
-       Just v -> let output = outputIface vt
-                 in when (supportsMode output Mouse) $
-                      liftIO $ setMode output Mouse True
+     let output = outputIface vty
+     when (supportsMode output Mouse) $
+       liftIO $ setMode output Mouse True
 
 Bear in mind that some terminals do not support mouse interaction, so
 use Vty's ``getModeStatus`` to find out whether your terminal will
@@ -1055,9 +1146,8 @@ Scrolling operations do nothing when they don't make sense for the
 specified viewport; scrolling a ``Vertical`` viewport horizontally is a
 no-op, for example.
 
-Using ``viewportScroll`` and the ``myViewport`` example given above, we
-can write an event handler that scrolls the "Hello, world!" viewport one
-column to the right:
+Using ``viewportScroll`` we can write an event handler that scrolls the
+``Viewport1`` viewport one column to the right:
 
 .. code:: haskell
 
@@ -1086,8 +1176,8 @@ simply wrap it with ``visible``:
    let w = viewport Viewport1 Horizontal $
            (visible $ str "Hello," <+> (str " world!")
 
-This example requests that the "``myViewport``" viewport be scrolled
-so that "Hello," is visible. We could extend this example with a value
+This example requests that the ``Viewport1`` viewport be scrolled so
+that "Hello," is visible. We could extend this example with a value
 in the application state indicating which word in our string should
 be visible and then use that to change which string gets wrapped with
 ``visible``; this is the basis of cursor-based scrolling.

@@ -1,5 +1,5 @@
 name:                brick
-version:             0.17
+version:             0.29
 synopsis:            A declarative terminal user interface library
 description:
   Write terminal applications painlessly with 'brick'! You write an
@@ -10,7 +10,7 @@ description:
   >
   > import Brick
   >
-  > ui :: Widget n
+  > ui :: Widget ()
   > ui = str "Hello, world!"
   >
   > main :: IO ()
@@ -34,12 +34,14 @@ maintainer:          Jonathan Daugherty <cygnus@foobox.com>
 copyright:           (c) Jonathan Daugherty 2015-2016
 category:            Graphics
 build-type:          Simple
-cabal-version:       >=1.10
+cabal-version:       >=1.18
 Homepage:            https://github.com/jtdaugherty/brick/
 Bug-reports:         https://github.com/jtdaugherty/brick/issues
 
-data-files:          README.md,
+extra-doc-files:     README.md,
                      docs/guide.rst,
+                     docs/samtay-tutorial.md,
+                     docs/snake-demo.gif,
                      CHANGELOG.md
 
 Source-Repository head
@@ -62,6 +64,7 @@ library
     Brick.Focus
     Brick.Main
     Brick.Markup
+    Brick.Themes
     Brick.Types
     Brick.Util
     Brick.Widgets.Border
@@ -79,20 +82,48 @@ library
     Brick.Widgets.Internal
 
   build-depends:       base <= 5,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        transformers,
+                       data-clist >= 0.1,
                        dlist,
                        containers,
                        microlens >= 0.3.0.0,
                        microlens-th,
                        microlens-mtl,
+                       config-ini,
                        vector,
                        contravariant,
                        stm >= 2.4,
                        text,
                        text-zipper >= 0.7.1,
                        template-haskell,
-                       deepseq >= 1.3 && < 1.5
+                       deepseq >= 1.3 && < 1.5,
+                       word-wrap >= 0.2
+
+executable brick-readme-demo
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-language:    Haskell2010
+  default-extensions:  CPP
+  main-is:             ReadmeDemo.hs
+  build-depends:       base,
+                       brick,
+                       text
+
+executable brick-text-wrap-demo
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-language:    Haskell2010
+  default-extensions:  CPP
+  main-is:             TextWrapDemo.hs
+  build-depends:       base,
+                       brick,
+                       text,
+                       word-wrap
 
 executable brick-cache-demo
   if !flag(demos)
@@ -104,7 +135,7 @@ executable brick-cache-demo
   main-is:             CacheDemo.hs
   build-depends:       base,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
                        microlens-th
@@ -118,7 +149,7 @@ executable brick-visibility-demo
   main-is:             VisibilityDemo.hs
   build-depends:       base,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
                        microlens-th
@@ -133,7 +164,7 @@ executable brick-viewport-scroll-demo
   main-is:             ViewportScrollDemo.hs
   build-depends:       base,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens
 
@@ -146,7 +177,7 @@ executable brick-dialog-demo
   main-is:             DialogDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens
 
@@ -159,7 +190,7 @@ executable brick-mouse-demo
   main-is:             MouseDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
                        microlens-th,
@@ -174,7 +205,7 @@ executable brick-layer-demo
   main-is:             LayerDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
                        microlens-th
@@ -188,7 +219,7 @@ executable brick-suspend-resume-demo
   main-is:             SuspendAndResumeDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
                        microlens-th
@@ -202,7 +233,20 @@ executable brick-padding-demo
   main-is:             PaddingDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
+                       text,
+                       microlens
+
+executable brick-theme-demo
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-language:    Haskell2010
+  main-is:             ThemeDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.18.1,
                        text,
                        microlens
 
@@ -215,7 +259,7 @@ executable brick-attr-demo
   main-is:             AttrDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens
 
@@ -228,7 +272,7 @@ executable brick-markup-demo
   main-is:             MarkupDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens
 
@@ -241,7 +285,21 @@ executable brick-list-demo
   main-is:             ListDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
+                       text,
+                       microlens >= 0.3.0.0,
+                       vector
+
+executable brick-list-vi-demo
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-language:    Haskell2010
+  main-is:             ListViDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
                        vector
@@ -255,10 +313,23 @@ executable brick-custom-event-demo
   main-is:             CustomEventDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens >= 0.3.0.0,
                        microlens-th
+
+executable brick-fill-demo
+  if !flag(demos)
+    Buildable: False
+  hs-source-dirs:      programs
+  ghc-options:         -threaded -Wall -fno-warn-unused-do-bind -O3
+  default-language:    Haskell2010
+  main-is:             FillDemo.hs
+  build-depends:       base <= 5,
+                       brick,
+                       vty >= 5.18.1,
+                       text,
+                       microlens
 
 executable brick-hello-world-demo
   if !flag(demos)
@@ -269,7 +340,7 @@ executable brick-hello-world-demo
   main-is:             HelloWorldDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens
 
@@ -282,7 +353,7 @@ executable brick-edit-demo
   main-is:             EditDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        vector,
                        microlens >= 0.3.0.0,
@@ -298,7 +369,7 @@ executable brick-border-demo
   main-is:             BorderDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens
 
@@ -312,6 +383,6 @@ executable brick-progressbar-demo
   main-is:             ProgressBarDemo.hs
   build-depends:       base <= 5,
                        brick,
-                       vty >= 5.15,
+                       vty >= 5.18.1,
                        text,
                        microlens

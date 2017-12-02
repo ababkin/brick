@@ -112,7 +112,7 @@ data Extent n = Extent { extentName      :: n
               deriving (Show)
 
 data EventRO n = EventRO { eventViewportMap :: M.Map n Viewport
-                         , eventVtyHandle :: Maybe Vty
+                         , eventVtyHandle :: Vty
                          , latestExtents :: [Extent n]
                          }
 
@@ -133,7 +133,7 @@ data Direction = Up
 data Location = Location { loc :: (Int, Int)
                          -- ^ (Column, Row)
                          }
-                deriving (Show, Eq)
+                deriving (Show, Eq, Ord)
 
 suffixLenses ''Location
 
@@ -204,11 +204,13 @@ data BrickEvent n e = VtyEvent Event
                     -- ^ The event was an application event.
                     | MouseDown n Button [Modifier] Location
                     -- ^ A mouse-down event on the specified region was
-                    -- received.
+                    -- received. The 'n' value is the resource name of
+                    -- the clicked widget (see 'clickable').
                     | MouseUp n (Maybe Button) Location
-                    -- ^ A mouse-down event on the specified region was
-                    -- received.
-                    deriving (Show, Eq)
+                    -- ^ A mouse-up event on the specified region was
+                    -- received. The 'n' value is the resource name of
+                    -- the clicked widget (see 'clickable').
+                    deriving (Show, Eq, Ord)
 
 data RenderState n =
     RS { viewportMap :: M.Map n Viewport

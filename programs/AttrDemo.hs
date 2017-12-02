@@ -4,7 +4,7 @@ module Main where
 import Data.Monoid
 import Graphics.Vty
   ( Attr, white, blue, cyan, green, red, yellow
-  , black
+  , black, withURL
   )
 
 import Brick.Main
@@ -16,6 +16,8 @@ import Brick.Widgets.Core
   , withAttr
   , vBox
   , str
+  , hyperlink
+  , modifyDefAttr
   )
 import Brick.Util (on, fg)
 import Brick.AttrMap (attrMap, AttrMap)
@@ -35,9 +37,18 @@ ui =
          , withAttr "foundFull" $
            str "You can override everything ..."
          , withAttr "foundFgOnly" $
-           str "... or only you want to change and inherit the rest."
+           str "... or only what you want to change and inherit the rest."
          , str "Attribute names are assembled with the Monoid append operation to indicate"
          , str "hierarchy levels, e.g. \"window\" <> \"title\"."
+         , str " "
+         , withAttr "linked" $
+           str "This text is hyperlinked in terminals that support hyperlinking."
+         , str " "
+         , hyperlink "http://www.google.com/" $
+           str "This text is also hyperlinked in terminals that support hyperlinking."
+         , str " "
+         , modifyDefAttr (`withURL` "http://www.google.com/") $
+           str "This text is hyperlinked by modifying the default attribute."
          ]
 
 globalDefault :: Attr
@@ -49,6 +60,7 @@ theMap = attrMap globalDefault
     , ("foundFgOnly",             fg red)
     , ("general",                 yellow `on` black)
     , ("general" <> "specific",   fg cyan)
+    , ("linked",                  fg yellow `withURL` "http://www.google.com/")
     ]
 
 app :: App () e ()

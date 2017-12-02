@@ -29,10 +29,13 @@ module Brick.AttrMap
   , attrMap
   , forceAttrMap
   , attrName
+  -- * Inspection
+  , attrNameComponents
   -- * Finding attributes from names
   , attrMapLookup
   -- * Manipulating attribute maps
-  , setDefault
+  , setDefaultAttr
+  , getDefaultAttr
   , applyAttrMappings
   , mergeWithDefault
   , mapAttrName
@@ -53,7 +56,7 @@ import Data.String (IsString(..))
 import Graphics.Vty (Attr(..), MaybeDefault(..))
 
 -- | An attribute name. Attribute names are hierarchical; use 'mappend'
--- ('<>') to assemble them. Hierachy in an attribute name is used to
+-- ('<>') to assemble them. Hierarchy in an attribute name is used to
 -- represent increasing levels of specificity in referring to the
 -- attribute you want to use for a visual element, with names to the
 -- left being general and names to the right being more specific. For
@@ -65,7 +68,7 @@ import Graphics.Vty (Attr(..), MaybeDefault(..))
 -- "header" <> "clock" <> "seconds"
 -- @
 data AttrName = AttrName [String]
-              deriving (Show, Eq, Ord)
+              deriving (Show, Read, Eq, Ord)
 
 instance Monoid AttrName where
     mempty = AttrName []
@@ -82,6 +85,10 @@ data AttrMap = AttrMap Attr (M.Map AttrName Attr)
 -- | Create an attribute name from a string.
 attrName :: String -> AttrName
 attrName = AttrName . (:[])
+
+-- | Get the components of an attribute name.
+attrNameComponents :: AttrName -> [String]
+attrNameComponents (AttrName cs) = cs
 
 -- | Create an attribute map.
 attrMap :: Attr
@@ -145,15 +152,21 @@ attrMapLookup (AttrName ns) (AttrMap theDefault m) =
     in foldl combineAttrs theDefault results
 
 -- | Set the default attribute value in an attribute map.
-setDefault :: Attr -> AttrMap -> AttrMap
-setDefault _ (ForceAttr a) = ForceAttr a
-setDefault newDefault (AttrMap _ m) = AttrMap newDefault m
+setDefaultAttr :: Attr -> AttrMap -> AttrMap
+setDefaultAttr _ (ForceAttr a) = ForceAttr a
+setDefaultAttr newDefault (AttrMap _ m) = AttrMap newDefault m
+
+-- | Get the default attribute value in an attribute map.
+getDefaultAttr :: AttrMap -> Attr
+getDefaultAttr (ForceAttr a) = a
+getDefaultAttr (AttrMap d _) = d
 
 combineAttrs :: Attr -> Attr -> Attr
-combineAttrs (Attr s1 f1 b1) (Attr s2 f2 b2) =
+combineAttrs (Attr s1 f1 b1 u1) (Attr s2 f2 b2 u2) =
     Attr (s1 `combineMDs` s2)
          (f1 `combineMDs` f2)
          (b1 `combineMDs` b2)
+         (u1 `combineMDs` u2)
 
 combineMDs :: MaybeDefault a -> MaybeDefault a -> MaybeDefault a
 combineMDs _ (SetTo v) = SetTo v
